@@ -1,0 +1,6 @@
+config/oauth_client_secret.json
+config/token.pickle
+venv/
+__pycache__/
+*.pyc
+.env
