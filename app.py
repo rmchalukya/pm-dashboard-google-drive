@@ -249,6 +249,67 @@ else:
         )
 
 # ---------------------------------------------------------------------------
+# Sidebar: Last 10 updated documents from Google Drive
+# ---------------------------------------------------------------------------
+st.sidebar.markdown("---")
+st.sidebar.markdown("**Recent Drive Updates**")
+
+@st.cache_data(ttl=600, show_spinner=False)
+def fetch_recent_drive_files():
+    """Fetch last 10 recently modified files from Google Drive."""
+    try:
+        from utils.drive_connector import get_drive_service, get_recent_files
+        service = get_drive_service()
+        return get_recent_files(service, limit=10)
+    except Exception as e:
+        return {"error": str(e)}
+
+if oauth_ready:
+    recent_files = fetch_recent_drive_files()
+    if isinstance(recent_files, dict) and "error" in recent_files:
+        st.sidebar.caption(f"Could not fetch: {recent_files['error']}")
+    elif recent_files:
+        for i, f in enumerate(recent_files, 1):
+            fname = f.get("name", "Unknown")
+            modified = f.get("modifiedTime", "")
+            folder = f.get("folder_path", "")
+            # Format the date
+            if modified:
+                try:
+                    dt = datetime.fromisoformat(modified.replace("Z", "+00:00"))
+                    date_str = dt.strftime("%d %b, %H:%M")
+                except Exception:
+                    date_str = modified[:10]
+            else:
+                date_str = ""
+            # File type icon
+            mime = f.get("mimeType", "")
+            if "spreadsheet" in mime or "excel" in mime:
+                icon = "📊"
+            elif "document" in mime or "word" in mime:
+                icon = "📄"
+            elif "pdf" in mime:
+                icon = "📕"
+            elif "presentation" in mime or "powerpoint" in mime:
+                icon = "📙"
+            else:
+                icon = "📎"
+            # Truncate long names
+            display_name = fname if len(fname) <= 28 else fname[:25] + "..."
+            folder_short = folder.split("/")[0] if folder else ""
+            st.sidebar.markdown(
+                f"<div style='font-size:0.78rem; padding:3px 0; border-bottom:1px solid rgba(255,255,255,0.15);'>"
+                f"{icon} <b>{display_name}</b><br>"
+                f"<span style='color:#aed6f1; font-size:0.7rem;'>{folder_short} &middot; {date_str}</span>"
+                f"</div>",
+                unsafe_allow_html=True,
+            )
+    else:
+        st.sidebar.caption("No files found in Drive folder.")
+else:
+    st.sidebar.caption("Connect Google Drive to see recent updates.")
+
+# ---------------------------------------------------------------------------
 # Title
 # ---------------------------------------------------------------------------
 st.markdown(f"<h1 style='color:{PRIMARY}; margin-bottom:0;'>NeGD Project Monitoring Dashboard</h1>", unsafe_allow_html=True)

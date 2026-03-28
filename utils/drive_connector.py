@@ -47,6 +47,21 @@ def list_files_in_folder(service, folder_id, mime_filter=None):
     return files
 
 
+def get_recent_files(service, folder_id=ROOT_FOLDER_ID, limit=10):
+    """Get the most recently modified files across the entire folder tree.
+    Uses a single Drive API query with 'in parents' on the root folder won't work
+    for nested files, so we use a corpora query approach.
+    """
+    # Drive API v3: search all files the service account can see that are
+    # not folders, ordered by recency. We filter to files under our root
+    # by checking ancestors — but the simplest approach is to use the
+    # recursive scan and sort.
+    all_files = scan_folder_recursive(service, folder_id)
+    # Sort by modifiedTime descending
+    all_files.sort(key=lambda f: f.get("modifiedTime", ""), reverse=True)
+    return all_files[:limit]
+
+
 def scan_folder_recursive(service, folder_id=ROOT_FOLDER_ID, path=""):
     """Recursively scan all folders and files. Returns a flat list of dicts."""
     all_files = []
