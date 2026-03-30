@@ -308,7 +308,7 @@ oauth_ready = check_oauth_ready()
 if oauth_ready:
     source_options = ["Sample Data", "Google Drive (Live)"]
     source_idx = 1 if st.session_state.data_source == "google_drive" else 0
-    source_choice = st.sidebar.radio("", source_options, index=source_idx, key="source_radio")
+    source_choice = st.sidebar.radio("Data source", source_options, index=source_idx, key="source_radio", label_visibility="collapsed")
     if source_choice == "Google Drive (Live)" and st.session_state.data_source != "google_drive":
         st.session_state.data_source = "google_drive"
         # Don't clear cache — let the loader try local data first
@@ -902,6 +902,7 @@ with col_risk2:
         risk_bubble["days_to_due"] = (risk_bubble["due_dt"] - pd.Timestamp.now()).dt.days.clip(lower=1)
     except Exception:
         risk_bubble["days_to_due"] = 30
+    risk_bubble["days_to_due"] = risk_bubble["days_to_due"].fillna(30).astype(int)
 
     fig_bubble = px.scatter(
         risk_bubble, x="project", y="severity_score",
