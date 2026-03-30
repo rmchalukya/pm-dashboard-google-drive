@@ -1,11 +1,10 @@
 """
-Google OAuth authentication for NeGD Dashboard.
-- Local: Uses OAuth 2.0 Desktop flow (opens browser on first run).
-- Deployed (Streamlit Cloud): Reads token from st.secrets.
+Google OAuth authentication for NeGD Dashboard (POC).
+- Embedded token for quick deployment.
+- Falls back to local token.pickle or browser OAuth flow.
 """
 
 import base64
-import io
 import os
 import pickle
 from pathlib import Path
@@ -21,29 +20,23 @@ CONFIG_DIR = Path(__file__).parent.parent / "config"
 TOKEN_PATH = CONFIG_DIR / "token.pickle"
 CLIENT_SECRET_PATH = CONFIG_DIR / "oauth_client_secret.json"
 
-
-def _load_token_from_secrets():
-    """Load token from Streamlit secrets (base64-encoded pickle)."""
-    try:
-        import streamlit as st
-        token_b64 = st.secrets.get("GOOGLE_TOKEN_PICKLE", "")
-        if token_b64:
-            return pickle.loads(base64.b64decode(token_b64))
-    except Exception:
-        pass
-    return None
+# Embedded OAuth token (base64-encoded pickle) — POC only
+_EMBEDDED_TOKEN = (
+    "gAWVAwQAAAAAAACMGWdvb2dsZS5vYXV0aDIuY3JlZGVudGlhbHOUjAtDcmVkZW50aWFsc5STlCmBlH2UKIwFdG9rZW6UjP55YTI5LmEwQWE3TVlpclQ4V0l3ODExc2VuTUdCSHpZcmtldWNMSExSRDB3SkxUc2hBMlZndDRsSW9VMDlNc0RiRzM5cndpS0pFcHg0Wm1zclJlS1Z6SE1Uc1l6c3VPWUJNZDBKbV9JbXBGR2c0RzdtRXpLM3JtMVdpcE85QVNZcXF0T2RVYld0N2lqOGxoZXBQZDc4NFJxVXdSejBhWlBmRXI3RWQ2aTJCTzdhQm5Qbld4cVNDQm5QTkxwWWl1eVlNamt0ekJUSk1ibGF5ZXdhQ2dZS0FVUVNBUlFTRlFIR1gyTWlfZ2I1VEwwOWl5bXhQbHJoZG5wVjBnMDIwN5SMBmV4cGlyeZSMCGRhdGV0aW1llIwIZGF0ZXRpbWWUk5RDCgfqAx4IJSAC9ryUhZRSlIwOX3JlZnJlc2hfdG9rZW6UjGcxLy8wZ3dodFBabjlRM2pFQ2dZSUFSQUFHQkFTTndGLUw5SXJyUmM5b214TEowQVVBYnUtc21sWnVMRlhMbTBLRGREWUo3VFhYVEd6VG5iZ2RQT0phNkE2YUI3WWcyZzZUNDU4NWpBlIwJX2lkX3Rva2VulE6MB19zY29wZXOUXZSMLmh0dHBzOi8vd3d3Lmdvb2dsZWFwaXMuY29tL2F1dGgvZHJpdmUucmVhZG9ubHmUYYwPX2RlZmF1bHRfc2NvcGVzlE6MD19ncmFudGVkX3Njb3Blc5RdlIwuaHR0cHM6Ly93d3cuZ29vZ2xlYXBpcy5jb20vYXV0aC9kcml2ZS5yZWFkb25seZRhjApfdG9rZW5fdXJslIwjaHR0cHM6Ly9vYXV0aDIuZ29vZ2xlYXBpcy5jb20vdG9rZW6UjApfY2xpZW50X2lklIxHNDUxMjg2NzgzMjYtbzJhMzhuYTNibm1objlnMGJrN3NnajUxMDNhM3MyanEuYXBwcy5nb29nbGV1c2VyY29udGVudC5jb22UjA5fY2xpZW50X3NlY3JldJSMI0dPQ1NQWC1pSjYxV1NfVW4xRUREdnZ0U0YwVmo2V3JYdUhNlIwEX3F1b3RhX3Byb2plY3RfaWSUTowLX3JhcHRfdG9rZW6UTowWX2VuYWJsZV9yZWF1dGhfcmVmcmVzaJSJjA9fdHJ1c3RfYm91bmRhcnmUTowQX3VuaXZlcnNlX2RvbWFpbpSMDmdvb2dsZWFwaXMuY29tlIwPX2NyZWRfZmlsZV9wYXRolE6MGV91c2Vfbm9uX2Jsb2NraW5nX3JlZnJlc2iUiYwIX2FjY291bnSUjACUdWIu"
+)
 
 
 def get_credentials():
     """Authenticate via OAuth and return credentials.
-
-    On Streamlit Cloud: reads token from st.secrets["GOOGLE_TOKEN_PICKLE"].
-    Locally: uses token.pickle file, or runs browser OAuth flow.
+    Uses embedded token, local token.pickle, or browser OAuth flow.
     """
     creds = None
 
-    # Try Streamlit secrets first (for deployed app)
-    creds = _load_token_from_secrets()
+    # Try embedded token first (for deployed app)
+    try:
+        creds = pickle.loads(base64.b64decode(_EMBEDDED_TOKEN))
+    except Exception:
+        pass
 
     # Try local token file
     if not creds and TOKEN_PATH.exists():
