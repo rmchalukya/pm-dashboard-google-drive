@@ -25,7 +25,7 @@ from data.sample_data import (
 # ---------------------------------------------------------------------------
 st.set_page_config(
     page_title="NeGD Project Monitoring Dashboard",
-    page_icon="negd-logo.png",
+    page_icon="negd-logo.jpeg",
     layout="wide",
     initial_sidebar_state="expanded",
 )
@@ -136,20 +136,87 @@ def load_sample_data():
     }
 
 
-@st.cache_data(ttl=300, show_spinner="Scanning Google Drive...")
-def load_drive_data_cached():
-    from utils.drive_data_loader import load_drive_data
-    return load_drive_data()
-
-
 def check_oauth_ready():
     from pathlib import Path
     return (Path("config/oauth_client_secret.json").exists()
             or Path("config/token.pickle").exists())
 
 
+# ---------------------------------------------------------------------------
+# Local data persistence — save/load Drive data to disk
+# ---------------------------------------------------------------------------
+import pickle
+from pathlib import Path
+
+LOCAL_DATA_PATH = Path("data/drive_cache.pkl")
+
+
+def save_drive_data_locally(data_dict):
+    """Save fetched Drive data to a local pickle file for offline use."""
+    save_copy = {}
+    for key, val in data_dict.items():
+        if isinstance(val, pd.DataFrame):
+            save_copy[key] = val.copy()
+        else:
+            save_copy[key] = val
+    LOCAL_DATA_PATH.parent.mkdir(exist_ok=True)
+    with open(LOCAL_DATA_PATH, "wb") as f:
+        pickle.dump(save_copy, f)
+
+
+def load_local_drive_data():
+    """Load previously saved Drive data from disk. Returns None if not available."""
+    if not LOCAL_DATA_PATH.exists():
+        return None
+    try:
+        with open(LOCAL_DATA_PATH, "rb") as f:
+            return pickle.load(f)
+    except Exception:
+        return None
+
+
+def load_drive_with_progress():
+    """Load Drive data with a visible progress UI, then save locally."""
+    from utils.drive_data_loader import load_drive_data
+
+    progress_container = st.container()
+    with progress_container:
+        status = st.status("Connecting to Google Drive...", expanded=True)
+        progress_bar = st.progress(0, text="Initializing...")
+
+    def on_progress(stage, detail, percent):
+        progress_bar.progress(min(percent, 1.0), text=f"**{stage}** — {detail}")
+        status.update(label=f"{stage}: {detail}")
+
+    try:
+        result = load_drive_data(progress_callback=on_progress)
+        stats = result.get("stats", {})
+        status.update(
+            label=f"Scan complete — {stats.get('parsed', 0)} files parsed, "
+                  f"{stats.get('skipped', 0)} skipped, {stats.get('errors', 0)} errors",
+            state="complete",
+            expanded=False,
+        )
+        progress_bar.progress(1.0, text="**Complete** — Dashboard ready!")
+        # Save to disk for future use
+        save_drive_data_locally(result)
+        return result
+    except Exception as e:
+        status.update(label=f"Error: {e}", state="error")
+        progress_bar.empty()
+        raise
+
+
 if "data_source" not in st.session_state:
     st.session_state.data_source = "sample"
+
+# Use session state to cache drive data (avoids re-scanning on every rerun)
+if "drive_data_cache" not in st.session_state:
+    st.session_state.drive_data_cache = None
+
+# Track whether a refresh has been confirmed
+if "refresh_confirmed" not in st.session_state:
+    st.session_state.refresh_confirmed = False
 
 data = load_sample_data()
 drive_connected = False
@@ -157,7 +224,24 @@ drive_scan_time = None
 
 if st.session_state.data_source == "google_drive":
     try:
-        data = load_drive_data_cached()
+        if st.session_state.refresh_confirmed:
+            # User confirmed refresh — fetch fresh data from Drive
+            data = load_drive_with_progress()
+            st.session_state.drive_data_cache = data
+            st.session_state.refresh_confirmed = False
+        elif st.session_state.drive_data_cache is not None:
+            # Use in-memory session cache
+            data = st.session_state.drive_data_cache
+        else:
+            # Try loading from local disk first
+            local_data = load_local_drive_data()
+            if local_data is not None:
+                data = local_data
+                st.session_state.drive_data_cache = data
+            else:
+                # No local data — first time, must fetch from Drive
+                data = load_drive_with_progress()
+                st.session_state.drive_data_cache = data
         drive_connected = True
         drive_scan_time = data.get("scan_time")
     except Exception as e:
@@ -201,7 +285,7 @@ for col, default in [("risk_id", None), ("project", ""), ("severity", "Medium"),
 # ---------------------------------------------------------------------------
 # Sidebar
 # ---------------------------------------------------------------------------
-st.sidebar.image("negd-logo.png", width=80)
+st.sidebar.image("negd-logo.jpeg", width=80)
 st.sidebar.title("NeGD Dashboard")
 st.sidebar.markdown("---")
 
@@ -225,6 +309,7 @@ if oauth_ready:
     source_choice = st.sidebar.radio("", source_options, index=source_idx, key="source_radio")
     if source_choice == "Google Drive (Live)" and st.session_state.data_source != "google_drive":
         st.session_state.data_source = "google_drive"
+        # Don't clear cache — let the loader try local data first
         st.rerun()
     elif source_choice == "Sample Data" and st.session_state.data_source != "sample":
         st.session_state.data_source = "sample"
@@ -233,9 +318,26 @@ if oauth_ready:
         st.sidebar.success("Connected to Drive")
         if drive_scan_time:
             st.sidebar.caption(f"Last scan: {drive_scan_time}")
-        if st.sidebar.button("Refresh Data"):
-            load_drive_data_cached.clear()
-            st.rerun()
+
+        # Refresh with confirmation
+        if "show_refresh_confirm" not in st.session_state:
+            st.session_state.show_refresh_confirm = False
+
+        if not st.session_state.show_refresh_confirm:
+            if st.sidebar.button("Refresh Data"):
+                st.session_state.show_refresh_confirm = True
+                st.rerun()
+        else:
+            st.sidebar.warning("This will re-scan all Google Drive files. Continue?")
+            col_yes, col_no = st.sidebar.columns(2)
+            if col_yes.button("Yes, Sync", type="primary"):
+                st.session_state.show_refresh_confirm = False
+                st.session_state.refresh_confirmed = True
+                st.session_state.drive_data_cache = None
+                st.rerun()
+            if col_no.button("Cancel"):
+                st.session_state.show_refresh_confirm = False
+                st.rerun()
 else:
     st.sidebar.info("Using sample data")
     with st.sidebar.expander("Connect Google Drive"):
