@@ -210,7 +210,7 @@ def load_drive_with_progress():
 
 
 if "data_source" not in st.session_state:
-    st.session_state.data_source = "google_drive" if check_oauth_ready() else "sample"
+    st.session_state.data_source = "sample"
 
 # Use session state to cache drive data (avoids re-scanning on every rerun)
 if "drive_data_cache" not in st.session_state:
